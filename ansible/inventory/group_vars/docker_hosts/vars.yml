@@ -1,0 +1,29 @@
+---
+# Non-secret configuration. Secrets live next door in secrets.sops.yaml.
+
+timezone: America/Chicago
+
+# --- discord_music_bot role -------------------------------------------------
+dmb_repo_url: https://github.com/ethan-dowell/discord-music-bot.git
+dmb_repo_version: main
+
+dmb_install_dir: /opt/discord-music-bot
+dmb_container_name: discord-music-bot
+dmb_image_name: discord-music-bot:local
+
+# Bot behaviour. These become environment variables in the container; see
+# .env.example in the bot repo for the full list.
+dmb_command_prefix: "!"
+dmb_default_volume: 60
+dmb_log_level: INFO
+dmb_max_queue_length: 500
+dmb_idle_timeout: 300
+dmb_alone_timeout: 60
+
+# Leave empty for a global slash-command sync. Set to a server ID during
+# development so command changes appear immediately.
+dmb_dev_guild_id: ""
+
+# Container resource ceiling.
+dmb_cpu_limit: "2.0"
+dmb_memory_limit: 1G

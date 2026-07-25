@@ -1,0 +1,56 @@
+# {{ ansible_managed }}
+# Rendered by ansible/roles/discord_music_bot. Edit the template, not this file.
+
+services:
+  discord-music-bot:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    image: {{ dmb_image_name }}
+    container_name: {{ dmb_container_name }}
+    restart: unless-stopped
+
+    secrets:
+      - discord_token
+
+    environment:
+      DISCORD_TOKEN_FILE: /run/secrets/discord_token
+      COMMAND_PREFIX: "{{ dmb_command_prefix }}"
+      DEFAULT_VOLUME: "{{ dmb_default_volume }}"
+      MAX_QUEUE_LENGTH: "{{ dmb_max_queue_length }}"
+      IDLE_TIMEOUT: "{{ dmb_idle_timeout }}"
+      ALONE_TIMEOUT: "{{ dmb_alone_timeout }}"
+      LOG_LEVEL: "{{ dmb_log_level }}"
+      LOG_DIR: /data/logs
+      HEARTBEAT_FILE: /tmp/heartbeat
+      HEARTBEAT_MAX_AGE: "90"
+{% if dmb_dev_guild_id %}
+      DEV_GUILD_ID: "{{ dmb_dev_guild_id }}"
+{% endif %}
+
+    volumes:
+      - bot-data:/data
+
+    init: true
+
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ dmb_cpu_limit }}"
+          memory: {{ dmb_memory_limit }}
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  discord_token:
+    file: ./secrets/discord_token
+
+volumes:
+  bot-data:

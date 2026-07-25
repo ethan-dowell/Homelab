@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Secrets
+#
+# Only *.sops.yaml files belong in this repo, and those are encrypted. Anything
+# decrypted, and every private key, stays out.
+# ---------------------------------------------------------------------------
+*.decrypted
+*.decrypted.*
+*.plain.yaml
+age-key.txt
+keys.txt
+*.pem
+id_rsa
+id_ed25519
+!*.pub
+
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# .terraform.lock.hcl IS committed on purpose -- it pins provider checksums.
+
+# ---------------------------------------------------------------------------
+# Ansible
+# ---------------------------------------------------------------------------
+ansible/collections/
+*.retry
+.ansible/
+
+# ---------------------------------------------------------------------------
+# Editors / OS / Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

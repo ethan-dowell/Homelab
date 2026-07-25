@@ -1,0 +1,82 @@
+---
+# Fail before touching the host if the secret was never filled in. Without this
+# the container starts, Discord rejects the token, and the failure only shows
+# up in `docker logs` minutes later.
+- name: Assert the Discord token has been set
+  ansible.builtin.assert:
+    that:
+      - vault_discord_token is defined
+      - vault_discord_token | length > 20
+      - "'REPLACE_ME' not in vault_discord_token"
+    fail_msg: >-
+      vault_discord_token is missing or still the placeholder. Set it with:
+      sops edit ansible/inventory/group_vars/docker_hosts/secrets.sops.yaml
+    quiet: true
+
+- name: Create the application directory
+  ansible.builtin.file:
+    path: "{{ dmb_install_dir }}"
+    state: directory
+    owner: root
+    group: docker
+    mode: "0750"
+
+- name: Check out the bot source
+  ansible.builtin.git:
+    repo: "{{ dmb_repo_url }}"
+    dest: "{{ dmb_install_dir }}/src"
+    version: "{{ dmb_repo_version }}"
+    force: true
+  register: dmb_source
+
+- name: Create the secrets directory
+  ansible.builtin.file:
+    path: "{{ dmb_install_dir }}/secrets"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# Mounted into the container as a Docker secret. Passing the token this way
+# rather than as an environment variable keeps it out of `docker inspect`.
+- name: Write the Discord token
+  ansible.builtin.copy:
+    content: "{{ vault_discord_token }}"
+    dest: "{{ dmb_install_dir }}/secrets/discord_token"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart discord music bot
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ dmb_install_dir }}/docker-compose.yml"
+    owner: root
+    group: docker
+    mode: "0640"
+  notify: Restart discord music bot
+
+- name: Build and start the bot
+  community.docker.docker_compose_v2:
+    project_src: "{{ dmb_install_dir }}"
+    state: present
+    build: always
+    remove_orphans: true
+  register: dmb_compose
+
+- name: Wait for the container to report healthy
+  ansible.builtin.command:
+    cmd: >-
+      docker inspect -f {{ '{{.State.Health.Status}}' }} {{ dmb_container_name }}
+  register: dmb_health
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: dmb_health.stdout == "healthy"
+  # A bad token or a missing intent shows up here as a permanent 'unhealthy'.
+  # Report it rather than letting the play pass with a broken bot.
+  failed_when:
+    - dmb_health.stdout != "healthy"
+    - dmb_health.attempts | default(0) >= 30

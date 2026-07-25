@@ -1,0 +1,20 @@
+# Terraform state contains every attribute of every resource in plaintext,
+# including anything sensitive the provider returned. Never commit it.
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+crash.*.log
+
+# Plan files are also plaintext and can embed credentials.
+*.tfplan
+
+# Local variable overrides
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# .terraform.lock.hcl is intentionally NOT ignored -- it pins provider
+# checksums and belongs in version control.

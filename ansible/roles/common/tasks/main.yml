@@ -1,0 +1,37 @@
+---
+- name: Set the system timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - git
+      - htop
+      - unattended-upgrades
+      # Lets Proxmox report the guest's IP and shut it down gracefully. The
+      # generic cloud image does not ship it, which is why Terraform leaves the
+      # agent disabled until this role has run.
+      - qemu-guest-agent
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable the QEMU guest agent
+  ansible.builtin.systemd_service:
+    name: qemu-guest-agent
+    enabled: true
+    state: started
+
+- name: Enable unattended security upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"

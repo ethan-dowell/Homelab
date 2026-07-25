@@ -1,0 +1,154 @@
+# Homelab
+
+Infrastructure as code for a single-node Proxmox homelab.
+
+Terraform builds VMs on Proxmox; Ansible configures them and deploys workloads.
+Secrets are committed encrypted with SOPS + age.
+
+## What is here
+
+| Path | What it does |
+| --- | --- |
+| [`terraform/docker-host/`](terraform/docker-host/) | Builds VM 101 `docker-01`, a Debian 12 Docker host |
+| [`ansible/`](ansible/) | Installs Docker, deploys the Discord music bot |
+| [`docs/secrets.md`](docs/secrets.md) | **Where the encrypted tokens go**, and how |
+| [`scripts/validate.py`](scripts/validate.py) | Static checks that run without a live host |
+
+## The environment this targets
+
+Discovered from the live API, not assumed:
+
+| | |
+| --- | --- |
+| Proxmox | 9.2.2, single node `pve` |
+| Host | 16 cores, 86 GB RAM |
+| Disk storage | `local-lvm` (thin LVM, ~800 GB free) |
+| Image storage | `local` (accepts `iso` content) |
+| Bridge | `vmbr0`, 192.168.0.0/24, gateway 192.168.0.1 |
+| Existing VM | 100 `WinServer2022` |
+
+The node has **no VM templates**, so Terraform downloads the Debian generic
+cloud image and imports it as the root disk rather than cloning a template.
+
+## What gets built
+
+```
+VM 101  docker-01
+        Debian 12 (generic cloud), cloud-init
+        2 vCPU / 2 GB RAM / 20 GB on local-lvm
+        192.168.0.210/24 static, vmbr0
+        user 'ansible', SSH key only, no password
+```
+
+Then Ansible installs Docker CE, clones
+[discord-music-bot](https://github.com/ethan-dowell/discord-music-bot), builds
+the image on the host, and runs it under compose with the token mounted as a
+Docker secret.
+
+## Prerequisites
+
+On whatever machine you run this from:
+
+- Terraform >= 1.6
+- Ansible (Linux/macOS/WSL — Ansible cannot run from Windows as a control node)
+- `sops` and `age`
+- The SSH private key `~/.ssh/homelab_ed25519`
+- The age private key at `~/.config/sops/age/keys.txt` (see
+  [docs/secrets.md](docs/secrets.md))
+
+## Deploying
+
+### 1. Set your Discord token
+
+```bash
+sops edit ansible/inventory/group_vars/docker_hosts/secrets.sops.yaml
+```
+
+Replace the placeholder with your real token. Full detail in
+[docs/secrets.md](docs/secrets.md).
+
+### 2. Build the VM
+
+Credentials come from the environment so nothing lands in a committed file:
+
+```powershell
+$env:PROXMOX_VE_USERNAME = 'root@pam'; $env:PROXMOX_VE_PASSWORD = '<password>'
+```
+
+An API token is better than the root password — see
+[docs/secrets.md](docs/secrets.md#other-credentials). Then:
+
+```bash
+terraform -chdir=terraform/docker-host init
+```
+
+```bash
+terraform -chdir=terraform/docker-host apply
+```
+
+First apply takes a few minutes: it downloads ~300 MB of cloud image onto the
+node. Subsequent applies reuse it.
+
+### 3. Deploy the bot
+
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml
+```
+
+```bash
+cd ansible && ansible-playbook playbooks/site.yml
+```
+
+The play waits for the container to report **healthy** before finishing, so a
+green run means the bot is actually connected to Discord — not merely that the
+container started.
+
+## Checking on it
+
+```bash
+ssh -i ~/.ssh/homelab_ed25519 ansible@192.168.0.210
+```
+
+```bash
+docker logs -f discord-music-bot
+```
+
+```bash
+docker inspect -f '{{.State.Health.Status}}' discord-music-bot
+```
+
+Health is not a process check: the bot touches a heartbeat file only while its
+Discord gateway connection is live, so a bot that is running but disconnected
+reports unhealthy and Docker restarts it.
+
+## Validating changes without a host
+
+```bash
+python scripts/validate.py
+```
+
+Parses every YAML file, checks each `notify` has a matching handler, confirms
+the inventory IP still agrees with `terraform.tfvars`, and renders the compose
+template to check it produces valid YAML with and without `DEV_GUILD_ID` set.
+
+```bash
+terraform -chdir=terraform/docker-host validate
+```
+
+## Notes
+
+**Provider choice.** `bpg/proxmox`, not the `Telmate/proxmox` most older
+homelab guides use — Telmate has been effectively unmaintained since 2023 and
+does not handle PVE 8/9 disk imports. Within bpg, note that the newer
+`proxmox_vm` resource is explicitly marked experimental and *"MUST NOT be used
+in production"*, so this uses `proxmox_virtual_environment_vm`.
+
+**QEMU guest agent.** Terraform sets `agent.enabled = false` deliberately. The
+generic cloud image does not ship the agent, and enabling it makes Terraform
+block for minutes waiting for a reply that never comes. The `common` role
+installs the agent afterwards; enable the flag on a later apply if you want
+Proxmox to display the guest IP.
+
+**State.** Terraform state is local and gitignored — it contains every resource
+attribute in plaintext. Back up `terraform.tfstate` or move to a remote backend
+before this grows past one VM.

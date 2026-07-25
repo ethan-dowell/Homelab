@@ -1,0 +1,5 @@
+---
+- name: Restart discord music bot
+  community.docker.docker_compose_v2:
+    project_src: "{{ dmb_install_dir }}"
+    state: restarted

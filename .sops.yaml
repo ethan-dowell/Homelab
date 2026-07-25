@@ -1,0 +1,11 @@
+# SOPS encrypts the *values* in a YAML file and leaves the keys readable, so an
+# encrypted file still diffs sensibly in git.
+#
+# The recipient below is an age public key. Anyone holding the matching private
+# key (~/.config/sops/age/keys.txt) can decrypt. Add more recipients to the
+# list to grant access to another machine or person -- then re-run
+# `sops updatekeys <file>` on each encrypted file.
+
+creation_rules:
+  - path_regex: .*\.sops\.ya?ml$
+    age: age1qls3y5x9nymax25h9tes98huf8cwe923h95nyp03xduww64qmvnqht0x6l
