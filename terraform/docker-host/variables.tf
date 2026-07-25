@@ -50,6 +50,20 @@ variable "vm_tags" {
   default = ["terraform", "docker"]
 }
 
+variable "vm_enable_qemu_agent" {
+  description = <<-EOT
+    Whether Proxmox should attach the guest-agent virtio port and talk to it.
+
+    Leave false for the first build: the Debian generic cloud image has no
+    qemu-guest-agent, so Proxmox would wait for a reply that never comes and
+    Terraform blocks for minutes. Once the Ansible `common` role has installed
+    the agent, set this true and re-apply, then reboot the VM -- Proxmox will
+    then report the guest IP and can shut it down gracefully.
+  EOT
+  type        = bool
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # Sizing
 # ---------------------------------------------------------------------------
@@ -87,7 +101,7 @@ variable "disk_datastore_id" {
 }
 
 variable "image_datastore_id" {
-  description = "Storage that holds the downloaded cloud image. Must accept 'iso' content."
+  description = "Storage that holds the downloaded cloud image. Must accept 'import' content."
   type        = string
   default     = "local"
 }
@@ -103,12 +117,13 @@ variable "cloud_image_url" {
 
 variable "cloud_image_file_name" {
   description = <<-EOT
-    Name to store the image under. Proxmox's 'iso' content type only accepts
-    .iso and .img extensions, so the .qcow2 is saved as .img. The file's actual
-    format is unchanged and the import handles it correctly.
+    Name to store the image under. Keep the .qcow2 extension: the 'import'
+    content type accepts qcow2/raw/vmdk and infers the format from it. (Under
+    the older 'iso' content type the file had to be renamed to .img, which is
+    what most guides still show -- but PVE 9 will not import from 'iso'.)
   EOT
   type        = string
-  default     = "debian-12-genericcloud-amd64.img"
+  default     = "debian-12-genericcloud-amd64.qcow2"
 }
 
 # ---------------------------------------------------------------------------

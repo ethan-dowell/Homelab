@@ -9,7 +9,12 @@
 # Note the resource name: proxmox_virtual_environment_download_file is
 # deprecated and goes away in provider v1.0.
 resource "proxmox_download_file" "debian_cloud_image" {
-  content_type = "iso"
+  # Must be "import", not "iso". PVE 9 refuses to import a disk from a file
+  # whose storage content type is 'iso':
+  #   scsi0: local:iso/... has wrong type 'iso' - needs to be 'images' or 'import'
+  # The 'import' content type exists precisely for this and is enabled on
+  # `local` (check with: pvesm status --content import).
+  content_type = "import"
   datastore_id = var.image_datastore_id
   node_name    = var.node_name
 
@@ -41,12 +46,12 @@ resource "proxmox_virtual_environment_vm" "docker_host" {
   on_boot = true
   started = true
 
-  # The generic cloud image does not ship qemu-guest-agent. Leaving this
-  # enabled makes Terraform block for minutes waiting for an agent that will
-  # never answer. Ansible installs the agent later; until then Proxmox falls
-  # back to the static address configured below.
+  # False on first build: the generic cloud image ships no qemu-guest-agent, so
+  # Proxmox would block waiting for a reply that never comes. Flip
+  # vm_enable_qemu_agent to true after the Ansible common role has installed it
+  # (and reboot) to get guest IP reporting and graceful shutdown.
   agent {
-    enabled = false
+    enabled = var.vm_enable_qemu_agent
   }
 
   cpu {
