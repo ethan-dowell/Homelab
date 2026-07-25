@@ -31,8 +31,9 @@ services:
     volumes:
       - bot-data:/data
 
-    init: true
-
+    # No `init: true` here. The image's ENTRYPOINT is already tini; asking
+    # Docker for an init as well puts docker-init at PID 1 and demotes our tini
+    # to an ordinary child, which then warns that it cannot reap zombies.
     deploy:
       resources:
         limits:

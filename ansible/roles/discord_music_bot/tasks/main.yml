@@ -39,13 +39,20 @@
 
 # Mounted into the container as a Docker secret. Passing the token this way
 # rather than as an environment variable keeps it out of `docker inspect`.
+#
+# Ownership matters: outside swarm mode, compose bind-mounts the file and the
+# host's uid/gid and mode carry straight through, so the `uid`/`gid`/`mode`
+# keys on a secret definition are ignored. Root-owned 0600 is unreadable to the
+# container's unprivileged user and the bot exits with a config error. Own it
+# by the container's numeric uid instead and keep it 0400 -- readable by
+# exactly one account on either side of the boundary.
 - name: Write the Discord token
   ansible.builtin.copy:
     content: "{{ vault_discord_token }}"
     dest: "{{ dmb_install_dir }}/secrets/discord_token"
-    owner: root
-    group: root
-    mode: "0600"
+    owner: "{{ dmb_container_uid }}"
+    group: "{{ dmb_container_uid }}"
+    mode: "0400"
   no_log: true
   notify: Restart discord music bot
 

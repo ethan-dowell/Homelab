@@ -11,6 +11,11 @@ dmb_install_dir: /opt/discord-music-bot
 dmb_container_name: discord-music-bot
 dmb_image_name: discord-music-bot:local
 
+# Must match the botuser uid/gid baked into the bot repo's Dockerfile. The
+# token file on the host is owned by this id so the unprivileged container user
+# can read the bind-mounted secret.
+dmb_container_uid: 10001
+
 # Bot behaviour. These become environment variables in the container; see
 # .env.example in the bot repo for the full list.
 dmb_command_prefix: "!"
