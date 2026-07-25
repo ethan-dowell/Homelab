@@ -73,6 +73,13 @@
     remove_orphans: true
   register: dmb_compose
 
+# Handlers would otherwise run at the very end of the play, after the health
+# gate below -- so a token or compose change would restart the container and
+# the play would report success without ever checking the container it left
+# running. Flush them here so the gate sees the final state.
+- name: Apply any pending restart before verifying health
+  ansible.builtin.meta: flush_handlers
+
 - name: Wait for the container to report healthy
   ansible.builtin.command:
     cmd: >-
@@ -81,9 +88,7 @@
   changed_when: false
   retries: 30
   delay: 10
+  # Health means the Discord gateway answered, not just that the process is up.
+  # A bad token or a missing Message Content intent never goes healthy, so this
+  # is what stops the play passing with a bot that cannot actually log in.
   until: dmb_health.stdout == "healthy"
-  # A bad token or a missing intent shows up here as a permanent 'unhealthy'.
-  # Report it rather than letting the play pass with a broken bot.
-  failed_when:
-    - dmb_health.stdout != "healthy"
-    - dmb_health.attempts | default(0) >= 30
