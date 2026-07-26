@@ -47,9 +47,17 @@ jobs:
       - name: Structural validation
         run: python scripts/validate.py
 
+      # Run from inside ansible/ so ansible-lint finds ansible/.ansible-lint and
+      # resolves its exclude_paths relative to it. Invoked from the repo root
+      # with --project-dir the config is not picked up, and the generated SOPS
+      # file gets linted as if someone had hand-written it.
+      #
+      # Blocking, not advisory: the tree currently passes ansible-lint's
+      # 'production' profile with zero findings, so any new finding is a real
+      # regression rather than pre-existing noise.
       - name: ansible-lint
-        run: ansible-lint --project-dir ansible --exclude ansible/collections
-        continue-on-error: true
+        working-directory: ansible
+        run: ansible-lint --nocolor
 
   secrets:
     runs-on: ubuntu-latest
