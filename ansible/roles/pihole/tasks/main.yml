@@ -1,0 +1,181 @@
+---
+- name: Assert the Pi-hole admin password has been set
+  ansible.builtin.assert:
+    that:
+      - vault_pihole_password is defined
+      - vault_pihole_password | length >= 12
+      - "'REPLACE_ME' not in vault_pihole_password"
+    fail_msg: >-
+      vault_pihole_password is missing or still the placeholder. Set it with:
+      sops edit ansible/inventory/group_vars/dns_hosts/secrets.sops.yaml
+    quiet: true
+
+- name: Install DNS tooling
+  ansible.builtin.apt:
+    name:
+      - dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ---------------------------------------------------------------------------
+# Free up port 53
+#
+# Debian's cloud image runs systemd-resolved, which holds 127.0.0.53:53. Pi-hole
+# under host networking binds 0.0.0.0:53, which includes that address, so the
+# two cannot coexist. Disabling only the stub listener leaves resolved doing its
+# real job (resolving for the host itself via the upstreams cloud-init supplied)
+# while giving up the port.
+#
+# Order matters: repoint resolv.conf BEFORE restarting resolved, or the host
+# briefly has no working resolver and later tasks fail to reach the internet.
+# ---------------------------------------------------------------------------
+- name: Disable the systemd-resolved stub listener
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/resolved.conf
+    regexp: '^#?\s*DNSStubListener\s*='
+    line: "DNSStubListener=no"
+    state: present
+  register: pihole_stub_listener
+
+- name: Check for resolved's real upstream resolv.conf
+  ansible.builtin.stat:
+    path: /run/systemd/resolve/resolv.conf
+  register: pihole_resolved_conf
+
+- name: Point resolv.conf at the upstream list rather than the stub
+  ansible.builtin.file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  when: pihole_resolved_conf.stat.exists
+
+- name: Restart systemd-resolved to release port 53
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when: pihole_stub_listener.changed
+
+- name: Confirm the host can still resolve
+  ansible.builtin.command:
+    cmd: getent hosts deb.debian.org
+  register: pihole_host_resolves
+  changed_when: false
+  retries: 5
+  delay: 3
+  until: pihole_host_resolves.rc == 0
+
+# ---------------------------------------------------------------------------
+# Deploy
+# ---------------------------------------------------------------------------
+- name: Create the Pi-hole directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ pihole_install_dir }}"
+    - "{{ pihole_install_dir }}/etc-pihole"
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ pihole_install_dir }}/docker-compose.yml"
+    owner: root
+    group: docker
+    mode: "0640"
+  notify: Restart pihole
+
+- name: Start Pi-hole
+  community.docker.docker_compose_v2:
+    project_src: "{{ pihole_install_dir }}"
+    state: present
+    pull: missing
+    remove_orphans: true
+
+- name: Apply any pending restart before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for DNS to answer
+  ansible.builtin.command:
+    cmd: dig +short +time=2 +tries=1 @127.0.0.1 deb.debian.org
+  register: pihole_dns_check
+  changed_when: false
+  retries: 30
+  delay: 5
+  until: pihole_dns_check.rc == 0 and pihole_dns_check.stdout | length > 0
+
+# ---------------------------------------------------------------------------
+# Blocklists
+#
+# v6 dropped the `pihole adlist` subcommand that v5 had, and adlists live in
+# the gravity database rather than a config file. Writing them directly is the
+# supported path; INSERT OR IGNORE makes it idempotent against the UNIQUE
+# constraint on address.
+# ---------------------------------------------------------------------------
+# Count first, insert, count again. Pi-hole seeds its own default adlist, so
+# comparing against the length of pihole_adlists would never match -- the only
+# reliable signal that something new arrived is the count changing.
+- name: Count blocklists before
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ pihole_container_name }}
+      pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT COUNT(*) FROM adlist;"
+  register: pihole_adlists_before
+  changed_when: false
+
+- name: Register the blocklists
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ pihole_container_name }}
+      pihole-FTL sqlite3 /etc/pihole/gravity.db
+      "INSERT OR IGNORE INTO adlist (address, enabled, comment)
+       VALUES ('{{ item.url }}', 1, '{{ item.comment }}');"
+  loop: "{{ pihole_adlists }}"
+  loop_control:
+    label: "{{ item.comment }}"
+  changed_when: false
+
+- name: Count blocklists after
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ pihole_container_name }}
+      pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT COUNT(*) FROM adlist;"
+  register: pihole_adlist_count
+  changed_when: false
+
+- name: Count domains currently in gravity
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ pihole_container_name }}
+      pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT COUNT(*) FROM gravity;"
+  register: pihole_gravity_count
+  changed_when: false
+  failed_when: false
+
+# Downloading and merging every list takes a minute, so only do it when a list
+# was actually added or gravity has never been built.
+- name: Rebuild gravity from the blocklists
+  ansible.builtin.command:
+    cmd: docker exec {{ pihole_container_name }} pihole -g
+  changed_when: true
+  when: >-
+    (pihole_gravity_count.stdout | default('0') | trim | int) == 0
+    or (pihole_adlist_count.stdout | trim | int) != (pihole_adlists_before.stdout | trim | int)
+
+- name: Report gravity size
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ pihole_container_name }}
+      pihole-FTL sqlite3 /etc/pihole/gravity.db "SELECT COUNT(*) FROM gravity;"
+  register: pihole_gravity_final
+  changed_when: false
+
+- name: Show what is loaded
+  ansible.builtin.debug:
+    msg: >-
+      {{ pihole_adlist_count.stdout }} blocklists,
+      {{ pihole_gravity_final.stdout }} domains blocked

@@ -1,7 +1,6 @@
 ---
 # Non-secret configuration. Secrets live next door in secrets.sops.yaml.
-
-timezone: America/Chicago
+# `timezone` is shared and now lives in group_vars/all/vars.yml.
 
 # --- discord_music_bot role -------------------------------------------------
 dmb_repo_url: https://github.com/ethan-dowell/discord-music-bot.git

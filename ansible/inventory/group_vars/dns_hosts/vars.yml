@@ -1,0 +1,48 @@
+---
+# Non-secret Pi-hole configuration. The admin password lives next door in
+# secrets.sops.yaml.
+
+pihole_install_dir: /opt/pihole
+pihole_container_name: pihole
+
+# Pinned, not :latest. DNS is infrastructure -- an image that silently moves
+# under you is how a whole house loses the internet at 3am.
+pihole_image: pihole/pihole:2025.08.0
+
+pihole_web_port: 80
+
+# Where Pi-hole forwards anything it does not block. Cloudflare then Quad9;
+# both validate DNSSEC upstream and neither logs queries to an ad profile.
+pihole_upstreams:
+  - 1.1.1.1
+  - 9.9.9.9
+
+# Left off deliberately: both upstreams already validate, and enabling it here
+# mainly adds failure modes on domains with broken signing.
+pihole_dnssec: false
+
+# ---------------------------------------------------------------------------
+# Blocklists
+#
+# Ordered roughly by value for this use case. The Perflyst lists are the ones
+# that actually target televisions -- StevenBlack and AdAway are general.
+#
+# If a device starts misbehaving (a TV app that will not load, a stuck update),
+# suspect these first: disable one in the admin UI, re-test, and allowlist the
+# specific domain rather than dropping the whole list.
+# ---------------------------------------------------------------------------
+pihole_adlists:
+  - url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    comment: "StevenBlack unified - general ads and malware"
+  - url: https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/SmartTV.txt
+    comment: "Smart TV telemetry - Samsung, LG, Vizio, Sony"
+  - url: https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/AmazonFireTV.txt
+    comment: "Amazon Fire TV telemetry and ads"
+  - url: https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/android-tracking.txt
+    comment: "Android TV and Chromecast tracking"
+  - url: https://adaway.org/hosts.txt
+    comment: "AdAway - mobile and in-app ads"
+  - url: https://v.firebog.net/hosts/AdguardDNS.txt
+    comment: "AdGuard DNS list"
+  - url: https://v.firebog.net/hosts/Easyprivacy.txt
+    comment: "EasyPrivacy - tracking and analytics"

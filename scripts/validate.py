@@ -44,30 +44,47 @@ for path in yaml_files:
     except Exception as exc:
         check(str(rel), False, str(exc))
 
-print("\n=== SOPS file is actually encrypted ===")
-sops_file = ROOT / "inventory/group_vars/docker_hosts/secrets.sops.yaml"
-doc = yaml.safe_load(sops_file.read_text(encoding="utf-8"))
-check("has a sops metadata block", "sops" in doc)
-check("token value is ciphertext", doc.get("vault_discord_token", "").startswith("ENC["))
-check(
-    "no plaintext token leaked",
-    "REPLACE_ME_WITH_YOUR_DISCORD_BOT_TOKEN" not in sops_file.read_text(encoding="utf-8"),
-)
+print("\n=== SOPS files are actually encrypted ===")
+for group, key, placeholder in [
+    ("docker_hosts", "vault_discord_token", "REPLACE_ME_WITH_YOUR_DISCORD_BOT_TOKEN"),
+    ("dns_hosts", "vault_pihole_password", "REPLACE_ME"),
+]:
+    sops_file = ROOT / f"inventory/group_vars/{group}/secrets.sops.yaml"
+    check(f"{group}: secrets file exists", sops_file.is_file())
+    if not sops_file.is_file():
+        continue
+    raw = sops_file.read_text(encoding="utf-8")
+    doc = yaml.safe_load(raw)
+    check(f"{group}: has a sops metadata block", "sops" in doc)
+    check(f"{group}: {key} is ciphertext", str(doc.get(key, "")).startswith("ENC["))
+    check(f"{group}: no placeholder left", placeholder not in raw)
 
 print("\n=== Playbook shape ===")
 site = yaml.safe_load((ROOT / "playbooks/site.yml").read_text(encoding="utf-8"))
-check("site.yml is a list of plays", isinstance(site, list) and len(site) == 1)
-play = site[0]
-check("targets docker_hosts", play.get("hosts") == "docker_hosts")
-check(
-    "roles are in dependency order",
-    play.get("roles") == ["common", "docker", "discord_music_bot", "bot_autoupdate"],
-    str(play.get("roles")),
-)
+check("site.yml is a list of plays", isinstance(site, list))
+
+EXPECTED_PLAYS = {
+    "docker_hosts": ["common", "docker", "discord_music_bot", "bot_autoupdate"],
+    "dns_hosts": ["common", "docker", "pihole"],
+}
+plays = {p.get("hosts"): p for p in site}
+check("every expected group has a play", set(plays) == set(EXPECTED_PLAYS), str(set(plays)))
+for group, expected_roles in EXPECTED_PLAYS.items():
+    play = plays.get(group)
+    if play is None:
+        check(f"{group}: play present", False)
+        continue
+    check(
+        f"{group}: roles are in dependency order",
+        play.get("roles") == expected_roles,
+        str(play.get("roles")),
+    )
+
+all_roles = sorted({r for p in site for r in p.get("roles", [])})
 
 print("\n=== Roles resolve ===")
 roles_dir = ROOT / "roles"
-for role in play.get("roles", []):
+for role in all_roles:
     tasks = roles_dir / role / "tasks" / "main.yml"
     check(f"{role}/tasks/main.yml exists", tasks.is_file())
     if tasks.is_file():
@@ -76,7 +93,7 @@ for role in play.get("roles", []):
         check(f"{role} every task is named", all("name" in t for t in loaded))
 
 print("\n=== Handlers referenced by notify exist ===")
-for role in play.get("roles", []):
+for role in all_roles:
     tasks_path = roles_dir / role / "tasks" / "main.yml"
     handlers_path = roles_dir / role / "handlers" / "main.yml"
     tasks = yaml.safe_load(tasks_path.read_text(encoding="utf-8")) or []
@@ -90,20 +107,31 @@ for role in play.get("roles", []):
 
 print("\n=== Inventory ===")
 inv = yaml.safe_load((ROOT / "inventory/hosts.yml").read_text(encoding="utf-8"))
-hosts = inv["all"]["children"]["docker_hosts"]["hosts"]
+children = inv["all"]["children"]
+hosts = children["docker_hosts"]["hosts"]
 check("docker-01 present", "docker-01" in hosts)
-# Guards the classic drift: Terraform moves the VM, the inventory does not.
-tfvars = (ROOT.parent / "terraform/docker-host/terraform.tfvars").read_text(encoding="utf-8")
-tf_ip = next(
-    line.split("=")[1].strip().strip('"').split("/")[0]
-    for line in tfvars.splitlines()
-    if line.strip().startswith("vm_ipv4_address")
-)
-check(
-    "inventory IP matches terraform tfvars",
-    hosts["docker-01"]["ansible_host"] == tf_ip,
-    f'inventory={hosts["docker-01"]["ansible_host"]} terraform={tf_ip}',
-)
+check("dns-01 present", "dns-01" in children.get("dns_hosts", {}).get("hosts", {}))
+# Guards the classic drift: Terraform moves a VM, the inventory does not.
+def terraform_ip(root: str) -> str:
+    tfvars = (ROOT.parent / f"terraform/{root}/terraform.tfvars").read_text(encoding="utf-8")
+    return next(
+        line.split("=")[1].strip().strip('"').split("/")[0]
+        for line in tfvars.splitlines()
+        if line.strip().startswith("vm_ipv4_address")
+    )
+
+
+for host, group, tf_root in [
+    ("docker-01", "docker_hosts", "docker-host"),
+    ("dns-01", "dns_hosts", "dns-host"),
+]:
+    inv_ip = children[group]["hosts"][host]["ansible_host"]
+    tf_ip = terraform_ip(tf_root)
+    check(
+        f"{host}: inventory IP matches terraform tfvars",
+        inv_ip == tf_ip,
+        f"inventory={inv_ip} terraform={tf_ip}",
+    )
 
 print("\n=== Compose template renders ===")
 group_vars = yaml.safe_load(

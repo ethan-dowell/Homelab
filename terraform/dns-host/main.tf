@@ -1,16 +1,8 @@
 # ---------------------------------------------------------------------------
-# Cloud image
-#
-# Owned by this root module, not the shared VM module. Each root keeps its own
-# copy under its own filename: two Terraform states must never both claim the
-# same resource, or destroying one would pull the image out from under the
-# other. A few hundred MB on a datastore with ~80 GB free is a cheap price for
-# that independence.
+# Cloud image (owned by this root -- see cloud_image_file_name in variables.tf)
 # ---------------------------------------------------------------------------
 resource "proxmox_download_file" "debian_cloud_image" {
-  # "import", not "iso". PVE 9 refuses to import a disk from a file whose
-  # storage content type is 'iso':
-  #   scsi0: local:iso/... has wrong type 'iso' - needs to be 'images' or 'import'
+  # "import", not "iso": PVE 9 will not import a root disk from 'iso' content.
   content_type = "import"
   datastore_id = var.image_datastore_id
   node_name    = var.node_name
@@ -18,14 +10,18 @@ resource "proxmox_download_file" "debian_cloud_image" {
   url       = var.cloud_image_url
   file_name = var.cloud_image_file_name
 
-  # Debian rebuilds the image in place behind the 'latest' URL. Leave the
-  # downloaded copy alone rather than re-fetching on every apply.
   overwrite           = false
   overwrite_unmanaged = true
 }
 
 # ---------------------------------------------------------------------------
-# Docker host
+# Pi-hole DNS host
+#
+# Separate from docker-01 on purpose. DNS is the highest blast-radius service
+# on a home network: if it stops answering, every device looks broken to
+# everyone in the house. Sharing a host with the media bot would tie DNS uptime
+# to a container that gets rebuilt weekly and redeployed on every playbook run.
+# docker-01 also already runs systemd-resolved on port 53.
 # ---------------------------------------------------------------------------
 module "vm" {
   source = "../modules/proxmox-vm"
@@ -53,26 +49,7 @@ module "vm" {
   vm_enable_qemu_agent = var.vm_enable_qemu_agent
 
   backup_enabled   = var.backup_enabled
-  backup_job_id    = var.backup_job_id
   backup_storage   = var.backup_storage
   backup_schedule  = var.backup_schedule
   backup_keep_last = var.backup_keep_last
-}
-
-# ---------------------------------------------------------------------------
-# State migration
-#
-# These resources were declared inline here before the shared module existed.
-# The moved blocks re-point existing state at the module's addresses, so this
-# refactor is a no-op against real infrastructure -- `terraform plan` should
-# report no changes. Safe to delete once applied, but harmless to keep.
-# ---------------------------------------------------------------------------
-moved {
-  from = proxmox_virtual_environment_vm.docker_host
-  to   = module.vm.proxmox_virtual_environment_vm.this
-}
-
-moved {
-  from = proxmox_backup_job.docker_host[0]
-  to   = module.vm.proxmox_backup_job.this[0]
 }

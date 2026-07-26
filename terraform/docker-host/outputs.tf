@@ -1,26 +1,23 @@
 output "vm_id" {
   description = "Proxmox VMID."
-  value       = proxmox_virtual_environment_vm.docker_host.vm_id
+  value       = module.vm.vm_id
 }
 
 output "vm_name" {
-  value = proxmox_virtual_environment_vm.docker_host.name
+  value = module.vm.vm_name
 }
 
 output "vm_ipv4_address" {
   description = "Static address assigned via cloud-init."
-  value       = split("/", var.vm_ipv4_address)[0]
+  value       = module.vm.ipv4_address
 }
 
 output "ssh_command" {
   description = "Ready-to-paste SSH command."
-  value       = "ssh -i ~/.ssh/homelab_ed25519 ${var.vm_username}@${split("/", var.vm_ipv4_address)[0]}"
+  value       = module.vm.ssh_command
 }
 
 output "ansible_inventory_hint" {
   description = "Values that must match ansible/inventory/hosts.yml."
-  value = {
-    ansible_host = split("/", var.vm_ipv4_address)[0]
-    ansible_user = var.vm_username
-  }
+  value       = module.vm.ansible_inventory_hint
 }

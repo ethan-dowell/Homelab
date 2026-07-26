@@ -1,0 +1,50 @@
+# {{ ansible_managed }}
+# Rendered by ansible/roles/pihole. Edit the template, not this file.
+
+services:
+  pihole:
+    image: {{ pihole_image }}
+    container_name: {{ pihole_container_name }}
+    restart: unless-stopped
+
+    # Host networking on purpose. Under bridge networking every query arrives
+    # from the Docker gateway address, so Pi-hole records one client for the
+    # entire LAN -- you lose the ability to see which TV is phoning home, and
+    # per-client rules stop working. Sharing the host stack preserves the real
+    # source IP. It also avoids NAT on UDP/53, which is where conntrack
+    # exhaustion bites busy resolvers.
+    network_mode: host
+
+    environment:
+      TZ: "{{ timezone }}"
+
+      # Pi-hole v6 renamed everything: config now maps to FTLCONF_<section>_<key>.
+      # v5's WEBPASSWORD / PIHOLE_DNS_ (which most guides still show) are gone.
+      FTLCONF_webserver_api_password: "{{ vault_pihole_password }}"
+      FTLCONF_webserver_port: "{{ pihole_web_port }}"
+
+      FTLCONF_dns_upstreams: "{{ pihole_upstreams | join(';') }}"
+
+      # Required when sharing the host network stack: FTL otherwise binds only
+      # to the interface it thinks it owns and ignores LAN queries.
+      FTLCONF_dns_listeningMode: all
+
+      # Do not forward unqualified or private-range reverse lookups upstream.
+      # Stops internal hostnames leaking to Cloudflare and cuts pointless
+      # queries.
+      FTLCONF_dns_domainNeeded: "true"
+      FTLCONF_dns_bogusPriv: "true"
+
+      FTLCONF_dns_dnssec: "{{ pihole_dnssec | string | lower }}"
+
+    volumes:
+      # v6 keeps config, the gravity database and query logs all under here.
+      - {{ pihole_install_dir }}/etc-pihole:/etc/pihole
+
+    # DNS is infrastructure: if the box reboots this must come back before
+    # anyone notices.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

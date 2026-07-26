@@ -28,3 +28,32 @@
     - name: Report
       ansible.builtin.debug:
         msg: "{{ dmb_status.stdout_lines }}"
+
+- name: Provision the DNS host and deploy Pi-hole
+  hosts: dns_hosts
+  become: true
+
+  pre_tasks:
+    - name: Wait for the host to accept SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        sleep: 5
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  roles:
+    - common
+    - docker
+    - pihole
+
+  post_tasks:
+    - name: Show container status
+      ansible.builtin.command:
+        cmd: docker ps --filter name={{ pihole_container_name }} --format "{{ '{{.Names}}\t{{.Status}}' }}"
+      register: pihole_status
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "{{ pihole_status.stdout_lines }}"
