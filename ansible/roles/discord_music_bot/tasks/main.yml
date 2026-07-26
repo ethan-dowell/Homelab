@@ -27,7 +27,6 @@
     dest: "{{ dmb_install_dir }}/src"
     version: "{{ dmb_repo_version }}"
     force: true
-  register: dmb_source
 
 - name: Create the secrets directory
   ansible.builtin.file:
@@ -71,7 +70,6 @@
     state: present
     build: always
     remove_orphans: true
-  register: dmb_compose
 
 # Handlers would otherwise run at the very end of the play, after the health
 # gate below -- so a token or compose change would restart the container and
@@ -84,11 +82,11 @@
   ansible.builtin.command:
     cmd: >-
       docker inspect -f {{ '{{.State.Health.Status}}' }} {{ dmb_container_name }}
-  register: dmb_health
+  register: discord_music_bot_health
   changed_when: false
   retries: 30
   delay: 10
   # Health means the Discord gateway answered, not just that the process is up.
   # A bad token or a missing Message Content intent never goes healthy, so this
   # is what stops the play passing with a bot that cannot actually log in.
-  until: dmb_health.stdout == "healthy"
+  until: discord_music_bot_health.stdout == "healthy"

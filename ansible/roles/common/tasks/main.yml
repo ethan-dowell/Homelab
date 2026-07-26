@@ -23,7 +23,7 @@
 - name: Check whether the host exposes the guest-agent virtio port
   ansible.builtin.stat:
     path: /dev/virtio-ports/org.qemu.guest_agent.0
-  register: qga_port
+  register: common_qga_port
 
 # qemu-guest-agent.service hard-depends on that device node, so starting it
 # without the port fails the systemd dependency job outright. Terraform builds
@@ -36,7 +36,7 @@
   ansible.builtin.systemd_service:
     name: qemu-guest-agent
     enabled: true
-    state: "{{ 'started' if qga_port.stat.exists else omit }}"
+    state: "{{ 'started' if common_qga_port.stat.exists else omit }}"
 
 - name: Enable unattended security upgrades
   ansible.builtin.copy:

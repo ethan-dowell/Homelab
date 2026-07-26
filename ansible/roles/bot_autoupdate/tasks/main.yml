@@ -35,14 +35,16 @@
     state: "{{ 'started' if dmb_autoupdate_enabled else 'stopped' }}"
     daemon_reload: true
 
-- name: Read back when it will next fire
+# noqa: command-instead-of-module -- the systemd module reports unit state but
+# cannot report a timer's next elapse, which is the one thing worth seeing here.
+- name: Read back when it will next fire # noqa: command-instead-of-module
   ansible.builtin.command:
     cmd: systemctl list-timers {{ dmb_update_unit }}.timer --no-pager
-  register: dmb_timer_status
+  register: bot_autoupdate_timer_status
   changed_when: false
   when: dmb_autoupdate_enabled
 
 - name: Show the timer schedule
   ansible.builtin.debug:
-    msg: "{{ dmb_timer_status.stdout_lines }}"
+    msg: "{{ bot_autoupdate_timer_status.stdout_lines }}"
   when: dmb_autoupdate_enabled

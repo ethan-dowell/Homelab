@@ -1,0 +1,10 @@
+---
+exclude_paths:
+  # Installed collections are third-party code.
+  - collections/
+
+  # SOPS owns this file's formatting entirely: the leading "#ENC[...]" comment
+  # and the 200+ character ciphertext lines are generated, not authored, and
+  # reformatting them would corrupt the file. That it is genuinely encrypted is
+  # verified by the 'secrets' job in .github/workflows/validate.yml instead.
+  - inventory/group_vars/docker_hosts/secrets.sops.yaml
