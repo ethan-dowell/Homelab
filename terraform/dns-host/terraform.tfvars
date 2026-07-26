@@ -28,7 +28,7 @@ ssh_public_keys = [
 
 # false for the first build; flip to true after the Ansible common role has
 # installed qemu-guest-agent, then apply again.
-vm_enable_qemu_agent = false
+vm_enable_qemu_agent = true
 
 backup_enabled   = true
 backup_schedule  = "03:15"

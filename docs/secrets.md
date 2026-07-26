@@ -81,6 +81,21 @@ C:\Users\Administrator\Vault\homelab.kdbx
 | SSH homelab_ed25519 | Private and public key as attachments |
 | Terraform state (docker-host) | `terraform.tfstate` as an attachment |
 
+The **Pi-hole admin password** is not a separate vault entry: it is encrypted at
+`ansible/inventory/group_vars/dns_hosts/secrets.sops.yaml`, and the age key that
+opens it is already in the vault, so it is recoverable transitively. Read it
+with:
+
+```bash
+sops -d ansible/inventory/group_vars/dns_hosts/secrets.sops.yaml
+```
+
+To add it as its own entry anyway:
+
+```powershell
+& "C:\Program Files\KeePassXC\keepassxc-cli.exe" add C:\Users\Administrator\Vault\homelab.kdbx "Pi-hole admin (dns-01)" -p -u admin --url http://192.168.0.211/admin
+```
+
 KeePassXC is open source, offline, and account-free — the `.kdbx` is just an
 encrypted file.
 

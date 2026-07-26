@@ -51,7 +51,10 @@
     force: true
   when: pihole_resolved_conf.stat.exists
 
-- name: Restart systemd-resolved to release port 53
+# noqa: no-handler -- a handler would defer this to the end of the play, but
+# port 53 has to be free *before* the Pi-hole container starts. This has to run
+# inline, in order.
+- name: Restart systemd-resolved to release port 53 # noqa: no-handler
   ansible.builtin.systemd_service:
     name: systemd-resolved
     state: restarted

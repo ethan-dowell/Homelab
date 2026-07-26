@@ -9,10 +9,24 @@ Secrets are committed encrypted with SOPS + age.
 
 | Path | What it does |
 | --- | --- |
-| [`terraform/docker-host/`](terraform/docker-host/) | Builds VM 101 `docker-01`, a Debian 12 Docker host |
-| [`ansible/`](ansible/) | Installs Docker, deploys the Discord music bot |
+| [`terraform/modules/proxmox-vm/`](terraform/modules/proxmox-vm/) | Reusable Debian cloud-init VM + backup job |
+| [`terraform/docker-host/`](terraform/docker-host/) | VM 101 `docker-01` — Docker host |
+| [`terraform/dns-host/`](terraform/dns-host/) | VM 102 `dns-01` — Pi-hole |
+| [`ansible/`](ansible/) | Installs Docker, deploys the music bot and Pi-hole |
 | [`docs/secrets.md`](docs/secrets.md) | **Where the encrypted tokens go**, and how |
+| [`docs/pihole.md`](docs/pihole.md) | Pointing your network at Pi-hole, and what it does and does not block |
 | [`scripts/validate.py`](scripts/validate.py) | Static checks that run without a live host |
+
+## Hosts
+
+| VM | Name | Address | Runs |
+| --- | --- | --- | --- |
+| 101 | `docker-01` | 192.168.0.210 | Discord music bot. Also the Ansible control node. |
+| 102 | `dns-01` | 192.168.0.211 | Pi-hole DNS ad blocking |
+
+`docker-01` doubles as the control node: it holds the SSH key and the age key
+and runs the playbooks. Ansible cannot run from Windows, so playbooks are
+executed there rather than from the workstation.
 
 ## The environment this targets
 
@@ -49,7 +63,8 @@ Docker secret.
 
 | When | What | Where it is defined |
 | --- | --- | --- |
-| Daily 02:30 | Proxmox snapshot backup of VM 101, zstd, keep-last 3 | `proxmox_backup_job` in [main.tf](terraform/docker-host/main.tf) |
+| Daily 02:30 | Proxmox snapshot backup of VM 101, zstd, keep-last 3 | `proxmox_backup_job` in the [VM module](terraform/modules/proxmox-vm/main.tf) |
+| Daily 03:15 | Proxmox snapshot backup of VM 102 | same module, via [dns-host](terraform/dns-host/) |
 | Sunday 04:00 (±30 min) | Rebuild the bot image so yt-dlp stays current | [`bot_autoupdate`](ansible/roles/bot_autoupdate/) role |
 
 **Why the weekly rebuild matters.** yt-dlp is the shortest-lived dependency in
@@ -131,9 +146,18 @@ ansible-galaxy collection install -r ansible/requirements.yml
 cd ansible && ansible-playbook playbooks/site.yml
 ```
 
-The play waits for the container to report **healthy** before finishing, so a
-green run means the bot is actually connected to Discord — not merely that the
-container started.
+Or target one group: `--limit dns_hosts`, `--limit docker_hosts`.
+
+The bot play waits for the container to report **healthy** before finishing, so
+a green run means it is actually connected to Discord — not merely that the
+container started. The Pi-hole play likewise waits until DNS genuinely answers
+a query before declaring success.
+
+### 4. Point the network at Pi-hole
+
+Deploying Pi-hole changes nothing until your router hands out `192.168.0.211`
+as the DNS server. That step, plus what it does and does not block, is in
+[docs/pihole.md](docs/pihole.md).
 
 ## Checking on it
 
