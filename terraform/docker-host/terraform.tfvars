@@ -10,6 +10,15 @@ vm_cores     = 2
 vm_memory_mb = 2048
 vm_disk_gb   = 20
 
+# Safe to enable now: the Ansible common role has installed qemu-guest-agent.
+# Keep this false for a first build against a fresh VM, or Terraform blocks
+# waiting for an agent that is not there yet.
+vm_enable_qemu_agent = true
+
+backup_enabled   = true
+backup_schedule  = "02:30"
+backup_keep_last = 3
+
 disk_datastore_id  = "local-lvm"
 image_datastore_id = "local"
 

@@ -32,3 +32,12 @@ dmb_dev_guild_id: ""
 # Container resource ceiling.
 dmb_cpu_limit: "2.0"
 dmb_memory_limit: 1G
+
+# --- bot_autoupdate role ----------------------------------------------------
+# Weekly image rebuild so the deployed yt-dlp does not drift behind upstream.
+dmb_autoupdate_enabled: true
+dmb_update_unit: discord-music-bot-update
+# systemd calendar event. Sunday 04:00 keeps clear of the 02:30 Proxmox backup.
+dmb_update_schedule: "Sun *-*-* 04:00:00"
+dmb_update_random_delay: 1800
+dmb_update_timeout: 1800

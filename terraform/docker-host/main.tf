@@ -118,3 +118,34 @@ resource "proxmox_virtual_environment_vm" "docker_host" {
     ]
   }
 }
+
+# ---------------------------------------------------------------------------
+# Scheduled backups
+#
+# The VM itself is disposable -- it rebuilds from this configuration in a few
+# minutes. What is not reproducible is the Docker volume: the bot's logs, and
+# anything else that accumulates in /data. That is what this protects.
+# ---------------------------------------------------------------------------
+resource "proxmox_backup_job" "docker_host" {
+  count = var.backup_enabled ? 1 : 0
+
+  id       = var.backup_job_id
+  node     = var.node_name
+  storage  = var.backup_storage
+  schedule = var.backup_schedule
+  vmid     = [tostring(proxmox_virtual_environment_vm.docker_host.vm_id)]
+  enabled  = true
+
+  # snapshot mode backs up without stopping the guest, so the bot stays online.
+  mode = "snapshot"
+
+  # zstd is markedly faster than gzip at a similar ratio, and this runs on the
+  # same box that serves audio.
+  compress = "zstd"
+
+  notes_template = "{{guestname}} - scheduled backup (terraform)"
+
+  prune_backups = {
+    "keep-last" = tostring(var.backup_keep_last)
+  }
+}

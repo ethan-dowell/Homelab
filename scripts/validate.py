@@ -61,7 +61,7 @@ play = site[0]
 check("targets docker_hosts", play.get("hosts") == "docker_hosts")
 check(
     "roles are in dependency order",
-    play.get("roles") == ["common", "docker", "discord_music_bot"],
+    play.get("roles") == ["common", "docker", "discord_music_bot", "bot_autoupdate"],
     str(play.get("roles")),
 )
 

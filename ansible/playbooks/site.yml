@@ -16,6 +16,7 @@
     - common
     - docker
     - discord_music_bot
+    - bot_autoupdate
 
   post_tasks:
     - name: Show container status

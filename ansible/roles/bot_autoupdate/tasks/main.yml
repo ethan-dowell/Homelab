@@ -1,0 +1,48 @@
+---
+# yt-dlp is the shortest-lived dependency in this stack. YouTube changes its
+# player regularly and yt-dlp ships fixes within days; an image built once and
+# left alone typically starts failing to resolve videos within weeks, with
+# "Sign in to confirm you're not a bot" or HTTP 403 on everything.
+#
+# This timer rebuilds the image on a schedule so the deployed yt-dlp never
+# drifts far behind upstream.
+
+- name: Install the rebuild service unit
+  ansible.builtin.template:
+    src: discord-music-bot-update.service.j2
+    dest: /etc/systemd/system/{{ dmb_update_unit }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install the rebuild timer unit
+  ansible.builtin.template:
+    src: discord-music-bot-update.timer.j2
+    dest: /etc/systemd/system/{{ dmb_update_unit }}.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Reload systemd before touching the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the rebuild timer
+  ansible.builtin.systemd_service:
+    name: "{{ dmb_update_unit }}.timer"
+    enabled: "{{ dmb_autoupdate_enabled }}"
+    state: "{{ 'started' if dmb_autoupdate_enabled else 'stopped' }}"
+    daemon_reload: true
+
+- name: Read back when it will next fire
+  ansible.builtin.command:
+    cmd: systemctl list-timers {{ dmb_update_unit }}.timer --no-pager
+  register: dmb_timer_status
+  changed_when: false
+  when: dmb_autoupdate_enabled
+
+- name: Show the timer schedule
+  ansible.builtin.debug:
+    msg: "{{ dmb_timer_status.stdout_lines }}"
+  when: dmb_autoupdate_enabled

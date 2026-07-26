@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Weekly rebuild of the Discord music bot (refreshes yt-dlp)
+Documentation=https://github.com/ethan-dowell/Homelab
+
+[Timer]
+OnCalendar={{ dmb_update_schedule }}
+
+# Spread the load so this never collides with the 02:30 Proxmox backup, and so
+# a fleet of hosts would not hammer PyPI simultaneously.
+RandomizedDelaySec={{ dmb_update_random_delay }}
+
+# Run on next boot if the host was powered off when the timer was due.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

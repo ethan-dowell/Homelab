@@ -1,0 +1,79 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: terraform fmt
+        run: terraform -chdir=terraform/docker-host fmt -check -recursive -diff
+
+      # -backend=false so this never needs credentials or touches real state.
+      - name: terraform init
+        run: terraform -chdir=terraform/docker-host init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform -chdir=terraform/docker-host validate
+
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checks
+        run: pip install --quiet pyyaml jinja2 ansible-lint
+
+      # Structural checks that need no host: YAML parses, every notify has a
+      # handler, the inventory IP still agrees with terraform.tfvars, and the
+      # compose template renders to valid YAML.
+      - name: Structural validation
+        run: python scripts/validate.py
+
+      - name: ansible-lint
+        run: ansible-lint --project-dir ansible --exclude ansible/collections
+        continue-on-error: true
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cheap insurance against the one mistake that actually matters here:
+      # committing a secret in the clear.
+      - name: Encrypted files must not contain plaintext
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            if ! grep -q 'ENC\[AES256_GCM' "$f"; then
+              echo "::error file=$f::*.sops.yaml is not encrypted"
+              fail=1
+            fi
+          done < <(find . -name '*.sops.yaml' -not -path './.git/*')
+          exit $fail
+
+      - name: No terraform state committed
+        run: |
+          set -euo pipefail
+          if find . -name '*.tfstate*' -not -path './.git/*' | grep -q .; then
+            echo "::error::terraform state is committed; it contains secrets in plaintext"
+            exit 1
+          fi

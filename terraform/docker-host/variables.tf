@@ -151,6 +151,43 @@ variable "dns_servers" {
 }
 
 # ---------------------------------------------------------------------------
+# Backups
+# ---------------------------------------------------------------------------
+variable "backup_enabled" {
+  description = "Whether to create a scheduled Proxmox backup job for this VM."
+  type        = bool
+  default     = true
+}
+
+variable "backup_job_id" {
+  description = "Identifier for the backup job. Stable so re-applies update rather than duplicate."
+  type        = string
+  default     = "backup-docker-host"
+}
+
+variable "backup_storage" {
+  description = "Storage for backup archives. Must accept 'backup' content."
+  type        = string
+  default     = "local"
+}
+
+variable "backup_schedule" {
+  description = "systemd calendar event. Default is daily at 02:30."
+  type        = string
+  default     = "02:30"
+}
+
+variable "backup_keep_last" {
+  description = <<-EOT
+    How many archives to retain. `local` has ~80 GB free and a 20 GB VM
+    zstd-compresses to a few GB, so 3 is comfortable. Raise with care --
+    filling `local` also breaks ISO and template storage.
+  EOT
+  type        = number
+  default     = 3
+}
+
+# ---------------------------------------------------------------------------
 # Guest access
 # ---------------------------------------------------------------------------
 variable "vm_username" {

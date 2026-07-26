@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Rebuild the Discord music bot image (refreshes yt-dlp)
+Documentation=https://github.com/ethan-dowell/Homelab
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ dmb_install_dir }}
+
+# --pull refreshes the python base image; --no-cache forces the pip layer to
+# re-resolve, which is the whole point -- requirements.txt pins yt-dlp with a
+# floating lower bound, so a cached layer would keep serving the version that
+# was current when the image was first built.
+#
+# Deliberately does NOT pull new bot source. This job refreshes dependencies;
+# deploying code changes stays an explicit ansible-playbook run so nobody wakes
+# up to an untested commit in production.
+ExecStart=/usr/bin/docker compose build --pull --no-cache
+ExecStart=/usr/bin/docker compose up -d
+
+# Old layers pile up fast with --no-cache; /var/lib/docker would grow without
+# bound on a 20 GB disk.
+ExecStart=/usr/bin/docker image prune -f
+
+# A full rebuild installs ffmpeg and the Python deps from scratch.
+TimeoutStartSec={{ dmb_update_timeout }}
+
+# If the build fails (PyPI down, upstream broken) the old container keeps
+# running untouched -- compose only replaces it on a successful build.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
