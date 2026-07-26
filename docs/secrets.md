@@ -60,9 +60,48 @@ It was generated on the Windows box at:
 C:\Users\Administrator\.config\sops\age\keys.txt
 ```
 
-**Back this up somewhere outside this repo** — a password manager entry is
-ideal. Lose it and every encrypted value here becomes unreadable, and you will
-have to re-create the file from scratch with a new key.
+Lose it and every encrypted value here becomes unreadable, and you will have to
+re-create the file from scratch with a new key. It is also stored in the vault
+below.
+
+## The vault
+
+A KeePassXC database holds everything that cannot be reconstructed from these
+repos:
+
+```
+C:\Users\Administrator\Vault\homelab.kdbx
+```
+
+| Entry | Contains |
+| --- | --- |
+| Proxmox root | Password for `root@pam` at 192.168.0.200 |
+| Discord bot token (Peethan Music) | The live bot token |
+| SOPS age key (Homelab) | Secret key, plus `keys.txt` as an attachment |
+| SSH homelab_ed25519 | Private and public key as attachments |
+| Terraform state (docker-host) | `terraform.tfstate` as an attachment |
+
+KeePassXC is open source, offline, and account-free — the `.kdbx` is just an
+encrypted file.
+
+**Copy that file somewhere off this machine.** A vault sitting on the same disk
+as the originals protects against nothing; it only becomes a backup once a copy
+exists elsewhere. Because it is encrypted, a USB stick or any cloud drive is
+fine.
+
+Refresh the Terraform state attachment after any `terraform apply` that changes
+infrastructure:
+
+```powershell
+& "C:\Program Files\KeePassXC\keepassxc-cli.exe" attachment-import C:\Users\Administrator\Vault\homelab.kdbx "Terraform state (docker-host)" terraform.tfstate C:\Repos\Homelab\terraform\docker-host\terraform.tfstate -f
+```
+
+### Why Terraform state is in there
+
+`terraform.tfstate` is gitignored — it records every resource attribute in the
+clear, so it must never be committed. But losing it is its own failure: Terraform
+would forget VM 101 exists and a later `apply` would try to build a duplicate at
+the same IP. The vault is the off-box copy.
 
 Its public half, already in `.sops.yaml`:
 

@@ -45,6 +45,38 @@ Then Ansible installs Docker CE, clones
 the image on the host, and runs it under compose with the token mounted as a
 Docker secret.
 
+## Scheduled jobs
+
+| When | What | Where it is defined |
+| --- | --- | --- |
+| Daily 02:30 | Proxmox snapshot backup of VM 101, zstd, keep-last 3 | `proxmox_backup_job` in [main.tf](terraform/docker-host/main.tf) |
+| Sunday 04:00 (±30 min) | Rebuild the bot image so yt-dlp stays current | [`bot_autoupdate`](ansible/roles/bot_autoupdate/) role |
+
+**Why the weekly rebuild matters.** yt-dlp is the shortest-lived dependency in
+this stack — YouTube changes its player regularly and yt-dlp ships fixes within
+days. An image built once and left alone typically starts failing to resolve
+anything within weeks (`Sign in to confirm you're not a bot`, or HTTP 403 on
+everything). `requirements.txt` pins a floating lower bound, but Docker's layer
+cache would keep serving the version that was current at first build, so the
+timer rebuilds with `--pull --no-cache` to force a re-resolve.
+
+It refreshes **dependencies only** — it deliberately does not pull new bot
+source, so nobody wakes up to an untested commit in production. Deploying code
+stays an explicit playbook run. A failed build leaves the running container
+untouched, since compose only replaces it on success.
+
+```bash
+systemctl list-timers discord-music-bot-update.timer
+```
+
+```bash
+sudo systemctl start discord-music-bot-update.service   # force a refresh now
+```
+
+**What the backup protects.** The VM rebuilds from this repo in about four
+minutes, so the guest itself is nearly disposable. The Docker volume is not —
+that holds the bot's logs and anything else under `/data`.
+
 ## Prerequisites
 
 On whatever machine you run this from:
@@ -143,11 +175,17 @@ does not handle PVE 8/9 disk imports. Within bpg, note that the newer
 `proxmox_vm` resource is explicitly marked experimental and *"MUST NOT be used
 in production"*, so this uses `proxmox_virtual_environment_vm`.
 
-**QEMU guest agent.** Terraform sets `agent.enabled = false` deliberately. The
-generic cloud image does not ship the agent, and enabling it makes Terraform
-block for minutes waiting for a reply that never comes. The `common` role
-installs the agent afterwards; enable the flag on a later apply if you want
-Proxmox to display the guest IP.
+**QEMU guest agent is two-phase.** `vm_enable_qemu_agent` is currently `true`,
+which is only valid because the `common` role has already installed the agent.
+Building a **fresh** VM requires setting it back to `false` for the first apply:
+the generic cloud image ships no agent, so Proxmox blocks waiting for a reply
+that never comes. The two sides depend on each other — Proxmox only attaches
+`/dev/virtio-ports/org.qemu.guest_agent.0` when the flag is on, and
+`qemu-guest-agent.service` hard-depends on that device, so the role enables the
+unit but only starts it once the port exists.
+
+Sequence for a rebuild: apply with the flag `false`, run the playbook, set it
+`true`, apply again (Terraform reboots the VM itself).
 
 **State.** Terraform state is local and gitignored — it contains every resource
 attribute in plaintext. Back up `terraform.tfstate` or move to a remote backend
